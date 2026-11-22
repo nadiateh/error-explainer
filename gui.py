@@ -5,6 +5,7 @@ from tkinter import ttk, messagebox
 from tkinter.scrolledtext import ScrolledText
 
 from ai_client import explain_error, ask_follow_up, AIError
+import config 
 import storage
 
 FOLLOW_UP_DIVIDER = "=" * 50
@@ -265,8 +266,17 @@ class ErrorExplainerApp:
 
 
 def main():
-    storage.init_db()
     root = tk.Tk()
+
+    try:
+        config.check_config()
+    except SystemExit as problem:
+        root.withdraw()
+        messagebox.showerror("Error Explainer: setup needed", str(problem))
+        root.destroy()
+        return
+
+    storage.init_db()
     ErrorExplainerApp(root)
     root.mainloop()
 

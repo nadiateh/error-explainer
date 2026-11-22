@@ -9,3 +9,9 @@ likely causes, and debugging steps. Build with Python and OpenAI API.
 3. Copy `.env.example` to `.env` and add your OpenAI key
 4. Run the desktop app: `python gui.py`
    (or the terminal version: `python main.py`)
+
+## Build the Windows app
+1. `pip install pyinstaller`
+2. `pyinstaller --onefile --windowed --name ErrorExplainer gui.py`
+3. Run `dist\ErrorExplainer.exe`. On first launch it shows where to put your `.env`
+   (`%APPDATA%\ErrorExplainer`).

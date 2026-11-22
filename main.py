@@ -1,4 +1,5 @@
 from ai_client import explain_error, AIError
+import config
 import storage
 
 END_WORD = "END"
@@ -139,6 +140,7 @@ def show_menu():
 
 
 def main():
+    config.check_config()
     storage.init_db()
 
     actions = {

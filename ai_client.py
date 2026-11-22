@@ -4,16 +4,21 @@ import config
 import prompts
 
 
-config.check_config()
+_client = None
 
-client = OpenAI(api_key=config.AI_API_KEY)
+
+def get_client():
+    global _client
+    if _client is None:
+        _client = OpenAI(api_key=config.AI_API_KEY)
+    return _client
 
 class AIError(Exception):
     """Raised when the AI request fails. The message is safe to show the user."""
 
 def ask_ai(instructions, user_message):
     try:
-        response = client.responses.create(
+        response = get_client().responses.create(
             model=config.AI_MODEL,
             instructions=instructions,
             input=user_message,
@@ -65,6 +70,7 @@ def ask_follow_up(error_text, explanation, previous_followups, question):
 
 
 if __name__ == "__main__":
+    config.check_config()
     sample_error = """Traceback (most recent call last):
   File "app.py", line 3, in <module>
     print(total + 5)
