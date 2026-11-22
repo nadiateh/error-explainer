@@ -52,6 +52,17 @@ def get_error(error_id):
         ).fetchone()
     return dict(row) if row else None
 
+def search_errors(search_text, limit=20):
+    pattern = f"%{search_text}%"
+    with open_db() as connection:
+        rows = connection.execute(
+            "SELECT id, created_at, error_text FROM errors "
+            "WHERE error_text LIKE ? OR explanation LIKE ? "
+            "ORDER BY id DESC LIMIT ?",
+            (pattern, pattern, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
 
 if __name__ == "__main__":
     init_db()

@@ -39,7 +39,15 @@ def ask_ai(instructions, user_message):
 
 def explain_error(error_text):
     user_message = prompts.build_user_message(error_text)
-    return ask_ai(prompts.SYSTEM_PROMPT, user_message)
+    reply = ask_ai(prompts.SYSTEM_PROMPT, user_message).strip()
+
+    first_line, _, rest = reply.partition("\n")
+
+    if first_line.strip().upper().startswith(prompts.NOT_AN_ERROR_MARKER):
+        message = rest.strip() or "That doesn't look like an error message. Please paste the full error."
+        return False, message
+
+    return True, reply
 
 
 if __name__ == "__main__":
@@ -47,5 +55,9 @@ if __name__ == "__main__":
   File "app.py", line 3, in <module>
     print(total + 5)
 NameError: name 'total' is not defined"""
-    # sample_error = "Hello, how are you?"
-    print(explain_error(sample_error))
+
+    for test_input in [sample_error, "hello how are you"]:
+        is_error, text = explain_error(test_input)
+        print("Is it an error?", is_error)
+        print(text)
+        print("=" * 60)
