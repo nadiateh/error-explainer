@@ -31,7 +31,7 @@ class ExplanationView(ctk.CTkScrollableFrame):
     # ---------- Keeping text wrapped to the card's width ----------
 
     def on_resize(self, event):
-        self.width = event.width
+        self.width = event.width / self._get_widget_scaling()
         for label, indent in self.wrapped:
             label.configure(wraplength=max(160, self.width - indent))
 
