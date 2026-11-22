@@ -63,6 +63,10 @@ def search_errors(search_text, limit=20):
         ).fetchall()
     return [dict(row) for row in rows]
 
+def delete_error(error_id):
+    with open_db() as connection:
+        connection.execute("DELETE FROM errors WHERE id = ?", (error_id,))
+
 
 if __name__ == "__main__":
     init_db()
