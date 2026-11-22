@@ -6,6 +6,7 @@ from tkinter.scrolledtext import ScrolledText
 
 from ai_client import explain_error, ask_follow_up, AIError
 import config 
+import explanation
 import storage
 
 FOLLOW_UP_DIVIDER = "=" * 50
@@ -132,7 +133,7 @@ class ErrorExplainerApp:
         self.error_box.delete("1.0", "end")
         self.error_box.insert("1.0", entry["error_text"])
 
-        text = entry["explanation"]
+        text = explanation.display_text(entry["explanation"])
         for item in storage.get_followups(entry_id):
             text += f"\n\n{FOLLOW_UP_DIVIDER}\nYOU ASKED: {item['question']}\n\n{item['answer']}"
         self.show_result(text)
@@ -186,15 +187,15 @@ class ErrorExplainerApp:
             self.show_result(f"Sorry, something went wrong:\n\n{problem}")
             return
 
-        is_error, text = result
+        is_error, data = result
 
         if not is_error:
             self.current_entry_id = None
-            self.show_result(text)
+            self.show_result(data["summary"])
             self.set_status("Not saved (this didn't look like an error).")
             return
 
-        entry_id = storage.save_error(error_text, text)
+        entry_id = storage.save_error(error_text, explanation.to_saved(data))
         self.refresh_history()
         self.show_entry(entry_id)
         self.set_status(f"Saved to history as #{entry_id}")
@@ -216,7 +217,12 @@ class ErrorExplainerApp:
         previous = storage.get_followups(entry_id)
 
         self.run_in_background(
-            lambda: ask_follow_up(entry["error_text"], entry["explanation"], previous, question),
+            lambda: ask_follow_up(
+                entry["error_text"],
+                explanation.display_text(entry["explanation"]),
+                previous,
+                question,
+            ),
             lambda answer, problem: self.finish_follow_up(entry_id, question, answer, problem),
         )
 

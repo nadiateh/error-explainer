@@ -1,5 +1,6 @@
 from ai_client import explain_error, AIError
 import config
+import explanation
 import storage
 
 END_WORD = "END"
@@ -63,22 +64,21 @@ def explain_new_error():
     print("\nThinking...\n")
 
     try:
-        is_error, explanation = explain_error(error_text)  # CHANGED
+        is_error, data = explain_error(error_text)
     except AIError as problem:
         print(f"Sorry, something went wrong: {problem}")
         return
 
-    # NEW
     if not is_error:
-        print(explanation)
+        print(data["summary"])
         print("(Not saved to history, because this didn't look like an error message.)")
         return
 
     print(DIVIDER)
-    print(explanation)
+    print(explanation.to_text(data))
     print(DIVIDER)
 
-    entry_id = storage.save_error(error_text, explanation)
+    entry_id = storage.save_error(error_text, explanation.to_saved(data))
     print(f"(Saved to history as #{entry_id})")
 
 
@@ -110,7 +110,7 @@ def open_past_error():
     print("YOUR ERROR:\n")
     print(entry["error_text"])
     print("\n" + DIVIDER)
-    print(entry["explanation"])
+    print(explanation.display_text(entry["explanation"]))
     print(DIVIDER)
 
 
