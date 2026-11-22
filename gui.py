@@ -1,7 +1,10 @@
+import queue
+import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter.scrolledtext import ScrolledText
 
+from ai_client import explain_error, AIError
 import storage
 
 
@@ -18,6 +21,7 @@ class ErrorExplainerApp:
         self.root.minsize(800, 500)
 
         self.history_ids = []
+        self.results = queue.Queue()  # NEW
 
         self.root.columnconfigure(0, weight=1)
         self.root.columnconfigure(1, weight=3)
@@ -100,7 +104,51 @@ class ErrorExplainerApp:
     # ---------- Button and list actions ----------
 
     def on_explain_click(self):
-        self.set_status("The Explain button gets connected in Step 9.")
+        error_text = self.error_box.get("1.0", "end").strip()
+        if not error_text:
+            self.set_status("Paste an error first.")
+            return
+
+        self.explain_button.config(state="disabled")
+        self.set_status("Thinking...")
+
+        worker = threading.Thread(target=self.run_explanation, args=(error_text,), daemon=True)
+        worker.start()
+        self.root.after(100, self.check_for_result)
+
+    def run_explanation(self, error_text):
+        # Runs in the background thread. No Tkinter calls allowed in here.
+        try:
+            is_error, explanation = explain_error(error_text)
+            self.results.put(("ok", error_text, is_error, explanation))
+        except AIError as problem:
+            self.results.put(("failed", error_text, False, str(problem)))
+        except Exception as problem:
+            self.results.put(("failed", error_text, False, f"Unexpected problem: {problem}"))
+
+    def check_for_result(self):
+        try:
+            outcome, error_text, is_error, text = self.results.get_nowait()
+        except queue.Empty:
+            self.root.after(100, self.check_for_result)
+            return
+
+        self.explain_button.config(state="normal")
+
+        if outcome == "failed":
+            self.show_result(f"Sorry, something went wrong:\n\n{text}")
+            self.set_status("")
+            return
+
+        self.show_result(text)
+
+        if not is_error:
+            self.set_status("Not saved (this didn't look like an error).")
+            return
+
+        entry_id = storage.save_error(error_text, text)
+        self.set_status(f"Saved to history as #{entry_id}")
+        self.refresh_history()
 
     def on_clear_click(self):
         self.error_box.delete("1.0", "end")
