@@ -49,6 +49,20 @@ def explain_error(error_text):
 
     return True, reply
 
+def ask_follow_up(error_text, explanation, previous_followups, question):
+    conversation = [
+        {"role": "user", "content": prompts.build_user_message(error_text)},
+        {"role": "assistant", "content": explanation},
+    ]
+
+    for item in previous_followups:
+        conversation.append({"role": "user", "content": item["question"]})
+        conversation.append({"role": "assistant", "content": item["answer"]})
+
+    conversation.append({"role": "user", "content": question})
+
+    return ask_ai(prompts.FOLLOW_UP_PROMPT, conversation).strip()
+
 
 if __name__ == "__main__":
     sample_error = """Traceback (most recent call last):

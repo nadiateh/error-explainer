@@ -4,8 +4,10 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter.scrolledtext import ScrolledText
 
-from ai_client import explain_error, AIError
+from ai_client import explain_error, ask_follow_up, AIError
 import storage
+
+FOLLOW_UP_DIVIDER = "=" * 50
 
 
 def summary_line(error_text):
@@ -17,11 +19,12 @@ class ErrorExplainerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Error Explainer")
-        self.root.geometry("1100x700")
-        self.root.minsize(800, 500)
+        self.root.geometry("1100x750")
+        self.root.minsize(800, 550)
 
         self.history_ids = []
-        self.results = queue.Queue()  # NEW
+        self.results = queue.Queue()
+        self.current_entry_id = None
 
         self.root.columnconfigure(0, weight=1)
         self.root.columnconfigure(1, weight=3)
@@ -49,7 +52,8 @@ class ErrorExplainerApp:
         self.history_list.pack(fill="both", expand=True)
         self.history_list.bind("<<ListboxSelect>>", self.on_history_select)
 
-        ttk.Button(panel, text="Delete selected", command=self.on_delete_click).pack(fill="x", pady=(8, 0))
+        self.delete_button = ttk.Button(panel, text="Delete selected", command=self.on_delete_click)
+        self.delete_button.pack(fill="x", pady=(8, 0))
 
     def build_main_panel(self):
         panel = ttk.Frame(self.root, padding=10)
@@ -68,8 +72,18 @@ class ErrorExplainerApp:
         self.status_label.pack(side="left", padx=10)
 
         ttk.Label(panel, text="Explanation:", font="TkHeadingFont").pack(anchor="w", pady=(10, 0))
-        self.result_box = ScrolledText(panel, wrap="word", state="disabled")
+        self.result_box = ScrolledText(panel, height=8, wrap="word", state="disabled")
         self.result_box.pack(fill="both", expand=True, pady=(5, 0))
+
+        ttk.Label(panel, text="Ask a follow-up question about this error:").pack(anchor="w", pady=(10, 0))
+        ask_row = ttk.Frame(panel)
+        ask_row.pack(fill="x", pady=(2, 0))
+        self.question_var = tk.StringVar()
+        question_box = ttk.Entry(ask_row, textvariable=self.question_var)
+        question_box.pack(side="left", fill="x", expand=True)
+        question_box.bind("<Return>", lambda event: self.on_ask_click())
+        self.ask_button = ttk.Button(ask_row, text="Ask", command=self.on_ask_click)
+        self.ask_button.pack(side="left", padx=(5, 0))
 
     # ---------- Small helpers ----------
 
@@ -81,6 +95,12 @@ class ErrorExplainerApp:
 
     def set_status(self, text):
         self.status_label.config(text=text)
+
+    def set_busy(self, busy):
+        new_state = "disabled" if busy else "normal"
+        for button in (self.explain_button, self.ask_button, self.delete_button):
+            button.config(state=new_state)
+        self.set_status("Thinking..." if busy else "")
 
     def refresh_history(self):
         search_text = self.search_var.get().strip()
@@ -101,7 +121,52 @@ class ErrorExplainerApp:
             return None
         return self.history_ids[selection[0]]
 
-    # ---------- Button and list actions ----------
+    def show_entry(self, entry_id):
+        entry = storage.get_error(entry_id)
+        if entry is None:
+            return None
+
+        self.current_entry_id = entry_id
+
+        self.error_box.delete("1.0", "end")
+        self.error_box.insert("1.0", entry["error_text"])
+
+        text = entry["explanation"]
+        for item in storage.get_followups(entry_id):
+            text += f"\n\n{FOLLOW_UP_DIVIDER}\nYOU ASKED: {item['question']}\n\n{item['answer']}"
+        self.show_result(text)
+        self.result_box.see("end")
+
+        return entry
+
+    # ---------- Running AI work in the background ----------
+
+    def run_in_background(self, task, on_done):
+        def worker():
+            # Runs in the background thread. No Tkinter calls allowed in here.
+            try:
+                result = task()
+                self.results.put((on_done, result, None))
+            except AIError as problem:
+                self.results.put((on_done, None, str(problem)))
+            except Exception as problem:
+                self.results.put((on_done, None, f"Unexpected problem: {problem}"))
+
+        self.set_busy(True)
+        threading.Thread(target=worker, daemon=True).start()
+        self.root.after(100, self.check_for_result)
+
+    def check_for_result(self):
+        try:
+            on_done, result, problem = self.results.get_nowait()
+        except queue.Empty:
+            self.root.after(100, self.check_for_result)
+            return
+
+        self.set_busy(False)
+        on_done(result, problem)
+
+    # ---------- Explain ----------
 
     def on_explain_click(self):
         error_text = self.error_box.get("1.0", "end").strip()
@@ -109,50 +174,69 @@ class ErrorExplainerApp:
             self.set_status("Paste an error first.")
             return
 
-        self.explain_button.config(state="disabled")
-        self.set_status("Thinking...")
+        self.run_in_background(
+            lambda: explain_error(error_text),
+            lambda result, problem: self.finish_explanation(error_text, result, problem),
+        )
 
-        worker = threading.Thread(target=self.run_explanation, args=(error_text,), daemon=True)
-        worker.start()
-        self.root.after(100, self.check_for_result)
-
-    def run_explanation(self, error_text):
-        # Runs in the background thread. No Tkinter calls allowed in here.
-        try:
-            is_error, explanation = explain_error(error_text)
-            self.results.put(("ok", error_text, is_error, explanation))
-        except AIError as problem:
-            self.results.put(("failed", error_text, False, str(problem)))
-        except Exception as problem:
-            self.results.put(("failed", error_text, False, f"Unexpected problem: {problem}"))
-
-    def check_for_result(self):
-        try:
-            outcome, error_text, is_error, text = self.results.get_nowait()
-        except queue.Empty:
-            self.root.after(100, self.check_for_result)
+    def finish_explanation(self, error_text, result, problem):
+        if problem:
+            self.current_entry_id = None
+            self.show_result(f"Sorry, something went wrong:\n\n{problem}")
             return
 
-        self.explain_button.config(state="normal")
-
-        if outcome == "failed":
-            self.show_result(f"Sorry, something went wrong:\n\n{text}")
-            self.set_status("")
-            return
-
-        self.show_result(text)
+        is_error, text = result
 
         if not is_error:
+            self.current_entry_id = None
+            self.show_result(text)
             self.set_status("Not saved (this didn't look like an error).")
             return
 
         entry_id = storage.save_error(error_text, text)
-        self.set_status(f"Saved to history as #{entry_id}")
         self.refresh_history()
+        self.show_entry(entry_id)
+        self.set_status(f"Saved to history as #{entry_id}")
+
+    # ---------- Follow-up questions ----------
+
+    def on_ask_click(self):
+        if self.current_entry_id is None:
+            self.set_status("Explain an error, or open one from History, first.")
+            return
+
+        question = self.question_var.get().strip()
+        if not question:
+            self.set_status("Type a question first.")
+            return
+
+        entry_id = self.current_entry_id
+        entry = storage.get_error(entry_id)
+        previous = storage.get_followups(entry_id)
+
+        self.run_in_background(
+            lambda: ask_follow_up(entry["error_text"], entry["explanation"], previous, question),
+            lambda answer, problem: self.finish_follow_up(entry_id, question, answer, problem),
+        )
+
+    def finish_follow_up(self, entry_id, question, answer, problem):
+        if problem:
+            self.set_status(f"Sorry, something went wrong: {problem}")
+            return
+
+        storage.save_followup(entry_id, question, answer)
+        self.question_var.set("")
+        if self.current_entry_id == entry_id:
+            self.show_entry(entry_id)
+        self.set_status("Answer added below.")
+
+    # ---------- History actions ----------
 
     def on_clear_click(self):
+        self.current_entry_id = None
         self.error_box.delete("1.0", "end")
         self.show_result("")
+        self.question_var.set("")
         self.history_list.selection_clear(0, "end")
         self.set_status("")
 
@@ -161,14 +245,9 @@ class ErrorExplainerApp:
         if entry_id is None:
             return
 
-        entry = storage.get_error(entry_id)
-        if entry is None:
-            return
-
-        self.error_box.delete("1.0", "end")
-        self.error_box.insert("1.0", entry["error_text"])
-        self.show_result(entry["explanation"])
-        self.set_status(f"Saved entry #{entry_id} from {entry['created_at'].replace('T', ' ')}")
+        entry = self.show_entry(entry_id)
+        if entry is not None:
+            self.set_status(f"Saved entry #{entry_id} from {entry['created_at'].replace('T', ' ')}")
 
     def on_delete_click(self):
         entry_id = self.selected_entry_id()

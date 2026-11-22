@@ -7,4 +7,5 @@ likely causes, and debugging steps. Build with Python and OpenAI API.
 1. `python -m venv .venv` and activate it
 2. `pip install -r requirements.txt`
 3. Copy `.env.example` to `.env` and add your OpenAI key
-4. `python main.py`
+4. Run the desktop app: `python gui.py`
+   (or the terminal version: `python main.py`)

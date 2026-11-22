@@ -20,10 +20,19 @@ def init_db():
     with open_db() as connection:
         connection.execute("""
             CREATE TABLE IF NOT EXISTS errors (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT NOT NULL,
-                error_text TEXT NOT NULL,
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at  TEXT NOT NULL,
+                error_text  TEXT NOT NULL,
                 explanation TEXT NOT NULL
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS followups (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                error_id   INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                question   TEXT NOT NULL,
+                answer     TEXT NOT NULL
             )
         """)
 
@@ -65,7 +74,25 @@ def search_errors(search_text, limit=20):
 
 def delete_error(error_id):
     with open_db() as connection:
+        connection.execute("DELETE FROM followups WHERE error_id = ?", (error_id,))
         connection.execute("DELETE FROM errors WHERE id = ?", (error_id,))
+
+def save_followup(error_id, question, answer):
+    created_at = datetime.now().isoformat(timespec="seconds")
+    with open_db() as connection:
+        connection.execute(
+            "INSERT INTO followups (error_id, created_at, question, answer) VALUES (?, ?, ?, ?)",
+            (error_id, created_at, question, answer),
+        )
+
+
+def get_followups(error_id):
+    with open_db() as connection:
+        rows = connection.execute(
+            "SELECT question, answer FROM followups WHERE error_id = ? ORDER BY id",
+            (error_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 if __name__ == "__main__":
