@@ -94,6 +94,11 @@ def get_followups(error_id):
         ).fetchall()
     return [dict(row) for row in rows]
 
+def count_errors():
+    with open_db() as connection:
+        row = connection.execute("SELECT COUNT(*) FROM errors").fetchone()
+    return row[0]
+
 
 if __name__ == "__main__":
     init_db()
