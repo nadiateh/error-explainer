@@ -1,4 +1,5 @@
 from ai_client import explain_error, AIError
+import storage
 
 END_WORD = "END"
 QUIT_WORD = "QUIT"
@@ -26,6 +27,7 @@ def read_error_from_user():
 
 
 def main():
+    storage.init_db()
     print("=== Error Explainer ===")
 
     while True:
@@ -50,6 +52,9 @@ def main():
         print(DIVIDER)
         print(explanation)
         print(DIVIDER)
+
+        entry_id = storage.save_error(error_text, explanation)
+        print(f"(Saved to history as #{entry_id})")
 
 if __name__ == "__main__":
     try:
